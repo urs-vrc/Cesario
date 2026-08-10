@@ -1,0 +1,79 @@
+# ------------------------------------------
+# .NET / C# / Visual Studio / .csproj files
+# ------------------------------------------
+
+# NuGet packages
+*.nupkg
+
+# Object / build output
+obj/
+bin/
+*.exe
+*.dll
+*.dll~
+*.pdb
+*.user
+
+# Build artifacts in bin/ directory
+*\.{log,log1,md,mdx,txt,txt~}
+
+# Coverage reports
+coverage/
+*.cover
+*.cover.{js,xml,xml.zip}
+*.cover.json
+*.cover.{html,html.zip}
+*.cover.rst
+*.cover.cobertura.xml
+*.cover.{lcjml,lcxml,json,xsl,xslz}
+*.ncov.{js,xml,json,xsl,xslz}
+*.pcss
+*.vsc.coverage
+*.vsc.coverage.{json,xml}
+*.cover.{html,jst,jst.xzip,jst.json}
+coverage-report.html
+coverage-report.xml
+
+# Test runs / output
+TestResults/
+*.vsix
+*.sln.bak
+*.vs*
+*~
+*.sln
+
+# IDE / editor files
+.idea/
+.vs*
+*.swp
+*.swo
+
+# Published assemblies
+publish/
+dist/
+
+# .NET runtime / framework
+Microsoft.NET/
+
+# IDE generated files
+*.tfv
+*.csproj.user
+*.sln.user
+
+# Native AOT specific
+*.rttgen
+*.rttgen.tg
+
+# Source generators
+*.gen.cs
+
+# Environment / user config
+.env
+.env.*
+
+# Debug / temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+~

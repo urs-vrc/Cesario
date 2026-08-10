@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cesario.Tests/Cesario.Tests.csproj" />
+    <Project Path="src/Cesario/Cesario.csproj" />
+  </Folder>
+</Solution>
