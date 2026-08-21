@@ -171,7 +171,7 @@ namespace Cesario
                     if (Remaining <= 0)
                         Result.Resolve(Results);
                 }
-                else // All - first rejection wins
+                else
                 {
                     if (!AlreadyRejected)
                     {
