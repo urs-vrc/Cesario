@@ -16,12 +16,14 @@ namespace Cesario
     /// additionally needs a public <c>object ChainResult</c> field (and optionally
     /// <c>Promise ChainResultAdoptee</c>).
     ///
-    /// Chain handler dispatch is wrapped in try/catch (Promises/A+ 2.2.7.2): if a
-    /// chain handler throws instead of returning normally, the promise it was meant
-    /// to settle rejects with the exception instead of hanging pending forever. This
-    /// only applies to Chain dispatch, not plain Then/Catch - those are fire-and-forget
-    /// with no downstream promise waiting on their outcome, so there's nothing for a
-    /// thrown exception to convert into.
+    /// NOTE: chain handler dispatch is NOT wrapped in try/catch. UdonSharp does not
+    /// support try/catch/finally at all - Udon itself has no exception-handling
+    /// mechanism, so a throwing handler is a hard compiler error
+    /// (System.NotSupportedException at build time), not something that can be caught
+    /// and converted into a rejection. Promises/A+ 2.2.7.2 (handler exceptions become
+    /// rejections) is therefore not implementable for as long as Cesario targets
+    /// UdonSharp - if a chain handler can fail, catch the failure condition yourself
+    /// with an ordinary if-check and call Reject or set ChainResultAdoptee explicitly.
     /// </summary>
     public class PromiseScheduler : UdonSharpBehaviour
     {
@@ -131,20 +133,7 @@ namespace Cesario
                 target.SetProgramVariable("IncomingPromise", settled);
                 target.SetProgramVariable("ChainResult", null);
                 target.SetProgramVariable("ChainResultAdoptee", null);
-
-                var handlerThrew = false;
-
-                try
-                {
-                    target.SendCustomEvent(eventToFire);
-                }
-                catch (System.Exception e)
-                {
-                    handlerThrew = true;
-                    next.Reject(e.Message);
-                }
-
-                if (handlerThrew) continue; // handler didn't finish normally - nothing to read back
+                target.SendCustomEvent(eventToFire);
 
                 var adoptee = (Promise)target.GetProgramVariable("ChainResultAdoptee");
                 if (adoptee != null)

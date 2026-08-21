@@ -124,10 +124,10 @@ If a step needs to hand off to *another* promise instead of a plain value (say, 
 itself kicks off more async work), set `ChainResultAdoptee` to that promise instead of
 `ChainResult` — the next step in the chain will wait on it.
 
-If a chain handler throws instead of returning normally, the promise it was meant to settle
-rejects with the exception rather than hanging pending forever — you don't need to wrap your
-own handler in a try/catch just to avoid a stuck chain, though catching and calling
-`ChainResultAdoptee`/rejecting yourself still gives you more control over the reason.
+A chain handler that fails needs to detect that itself and call `Reject`/set
+`ChainResultAdoptee` explicitly (see [Known Gaps](#known-gaps)) — UdonSharp has no
+try/catch, so nothing converts a thrown exception into a rejection automatically. A handler
+that actually throws will hard-fail the compile, not fail gracefully at runtime.
 
 ### Combining promises
 
@@ -221,10 +221,12 @@ specification:
   version this was built against.
 - **A promise adopted with itself rejects immediately**, matching the spec's intent (self-
   resolution is treated as an error, not left to hang forever waiting on itself).
-- **A throwing chain handler becomes a rejection**, matching the spec — the promise it would
-  have settled rejects with the exception instead of staying pending forever. This only
-  applies to `Chain`; plain `Then`/`Catch` have no downstream promise for a thrown exception
-  to convert into.
+- **A throwing handler does not become a rejection.** UdonSharp doesn't support
+  try/catch/finally at all — Udon has no exception-handling mechanism, so this isn't a gap
+  Cesario can close, not just one it hasn't gotten to yet. If a chain handler's work can
+  fail, check for that condition yourself with an ordinary `if` and call `Reject` (or set
+  `ChainResultAdoptee` to `Factory.Rejected(reason)`) explicitly, rather than letting an
+  exception happen.
 - **Values are untyped (`object`).** UdonSharp doesn't support generics, so there's no
   `Promise<T>` — the caller and whoever reads `.Value` just need to agree on the type.
 
@@ -236,6 +238,11 @@ like JS" would lead you wrong.
 
 ## Known Gaps
 
+- **No exception-to-rejection conversion, and this one's permanent.** UdonSharp does not
+  support `try`/`catch`/`finally` — Udon has no exception-handling mechanism at all, so a
+  throwing chain handler can't be caught and turned into a rejection; it's a hard compile
+  error instead. Design chain handlers defensively (check conditions before they'd throw)
+  rather than relying on failure to propagate automatically.
 - **Concurrent producers.** If you need multiple in-flight operations from the same
   behaviour (rather than one at a time), you'll need to track multiple pending promises
   yourself — Cesario doesn't provide a pattern for this out of the box.
