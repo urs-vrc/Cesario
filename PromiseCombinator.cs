@@ -158,7 +158,7 @@ namespace Cesario
                     if (idx >= 0)
                     {
                         var entry = new object[2];
-                        entry[0] = true; 
+                        entry[0] = false; 
                         entry[1] = IncomingPromise.Value;
                         Results[idx] = entry;
                     }
