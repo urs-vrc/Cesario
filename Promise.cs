@@ -142,10 +142,21 @@ namespace Cesario
         /// <see cref="Resolve"/> — U#'s compiler crashes on <c>value as Promise</c>
         /// type-checks, so callers that know they have a Promise-typed result call
         /// this directly instead of <see cref="Resolve"/>.
+        ///
+        /// Per Promises/A+ 2.3.1, adopting oneself is rejected with a TypeError-style
+        /// reason rather than allowed to proceed - without this guard, a promise
+        /// adopted with itself would sit adopting forever (subscribing to its own
+        /// Then/Catch, which can never fire since it never leaves the pending state).
         /// </summary>
         public void Adopt(Promise inner)
         {
             if (State != PromiseState.Pending || _adopting) return;
+
+            if (inner == this)
+            {
+                Reject("TypeError: Promise adopted with itself (self-resolution is not allowed)");
+                return;
+            }
 
             if (inner == null)
             {

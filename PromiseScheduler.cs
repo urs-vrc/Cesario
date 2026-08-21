@@ -15,6 +15,13 @@ namespace Cesario
     /// target needs a public <c>Promise IncomingPromise</c> field; every Chain target
     /// additionally needs a public <c>object ChainResult</c> field (and optionally
     /// <c>Promise ChainResultAdoptee</c>).
+    ///
+    /// Chain handler dispatch is wrapped in try/catch (Promises/A+ 2.2.7.2): if a
+    /// chain handler throws instead of returning normally, the promise it was meant
+    /// to settle rejects with the exception instead of hanging pending forever. This
+    /// only applies to Chain dispatch, not plain Then/Catch - those are fire-and-forget
+    /// with no downstream promise waiting on their outcome, so there's nothing for a
+    /// thrown exception to convert into.
     /// </summary>
     public class PromiseScheduler : UdonSharpBehaviour
     {
@@ -94,10 +101,10 @@ namespace Cesario
             _flushScheduled = false;
 
             // 1. Normal Then / Catch
-            int normalCount = _count;
+            var normalCount = _count;
             _count = 0;
 
-            for (int i = 0; i < normalCount; i++)
+            for (var i = 0; i < normalCount; i++)
             {
                 var target = _targets[i];
                 if (target == null) continue;
@@ -107,33 +114,46 @@ namespace Cesario
             }
 
             // 2. Chain handlers
-            int chainCountThisFlush = _chainQueueCount;
+            var chainCountThisFlush = _chainQueueCount;
             _chainQueueCount = 0;
 
-            for (int i = 0; i < chainCountThisFlush; i++)
+            for (var i = 0; i < chainCountThisFlush; i++)
             {
                 var target = _chainQueueTargets[i];
                 var next = _chainQueueNext[i];
                 if (target == null) continue;
 
                 var settled = _chainQueueSettled[i];
-                string eventToFire = settled.State == PromiseState.Fulfilled
+                var eventToFire = settled.State == PromiseState.Fulfilled
                     ? _chainQueueFulfillEvents[i]
                     : _chainQueueRejectEvents[i];
 
                 target.SetProgramVariable("IncomingPromise", settled);
                 target.SetProgramVariable("ChainResult", null);
                 target.SetProgramVariable("ChainResultAdoptee", null);
-                target.SendCustomEvent(eventToFire);
 
-                Promise adoptee = (Promise)target.GetProgramVariable("ChainResultAdoptee");
+                var handlerThrew = false;
+
+                try
+                {
+                    target.SendCustomEvent(eventToFire);
+                }
+                catch (System.Exception e)
+                {
+                    handlerThrew = true;
+                    next.Reject(e.Message);
+                }
+
+                if (handlerThrew) continue; // handler didn't finish normally - nothing to read back
+
+                var adoptee = (Promise)target.GetProgramVariable("ChainResultAdoptee");
                 if (adoptee != null)
                 {
                     next.Adopt(adoptee);
                 }
                 else
                 {
-                    object result = target.GetProgramVariable("ChainResult");
+                    var result = target.GetProgramVariable("ChainResult");
                     next.Resolve(result);
                 }
             }
