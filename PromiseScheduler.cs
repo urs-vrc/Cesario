@@ -2,36 +2,47 @@
 // Licensed under MIT License
 using UdonSharp;
 
-
 namespace Cesario
 {
     /// <summary>
-    /// Owns the deferred-dispatch queue for <see cref="Promise"/>. Callback invocation is never
-    /// performed synchronously by `Promise.Resolve`/`Reject` - it is handed off to
-    /// this scheduler and flushed a frame later, so that subscribers are never
-    /// called within the same turn that settled the promise.
+    /// Owns the deferred-dispatch queue for <see cref="Promise"/>. Callback invocation
+    /// is never performed synchronously by <c>Promise.Resolve</c>/<c>Reject</c> — it is
+    /// handed off to this scheduler and flushed a frame later, so that subscribers are
+    /// never called within the same turn that settled the promise.
     ///
-    /// Dispatch goes through SetProgramVariable + SendCustomEvent rather than typed
-    /// calls, since U# does not support custom interfaces. Every Then/Catch target
-    /// needs a public `Promise IncomingPromise` field; every Chain target additionally
-    /// needs a public `object ChainResult` field.
+    /// Dispatch goes through <c>SetProgramVariable</c> + <c>SendCustomEvent</c> rather
+    /// than typed calls, since U# does not support custom interfaces. Every Then/Catch
+    /// target needs a public <c>Promise IncomingPromise</c> field; every Chain target
+    /// additionally needs a public <c>object ChainResult</c> field (and optionally
+    /// <c>Promise ChainResultAdoptee</c>).
     /// </summary>
     public class PromiseScheduler : UdonSharpBehaviour
     {
-        private UdonSharpBehaviour[] _targets = new UdonSharpBehaviour[8];
-        private string[] _events = new string[8];
-        private Promise[] _sources = new Promise[8];
+        #region Normal Then/Catch Queue
+        
+        private UdonSharpBehaviour[] _targets = new UdonSharpBehaviour[32];
+        private string[] _events = new string[32];
+        private Promise[] _sources = new Promise[32];
         private int _count = 0;
-
-        private UdonSharpBehaviour[] _chainQueueTargets = new UdonSharpBehaviour[8];
-        private string[] _chainQueueFulfillEvents = new string[8];
-        private string[] _chainQueueRejectEvents = new string[8];
-        private Promise[] _chainQueueSettled = new Promise[8];
-        private Promise[] _chainQueueNext = new Promise[8];
+        
+        #endregion
+        
+        #region Chain Queue
+        
+        private UdonSharpBehaviour[] _chainQueueTargets = new UdonSharpBehaviour[16];
+        private string[] _chainQueueFulfillEvents = new string[16];
+        private string[] _chainQueueRejectEvents = new string[16];
+        private Promise[] _chainQueueSettled = new Promise[16];
+        private Promise[] _chainQueueNext = new Promise[16];
         private int _chainQueueCount = 0;
+        
+        #endregion
 
         private bool _flushScheduled = false;
 
+        /// <summary>
+        /// Enqueues a normal Then/Catch callback to be invoked on the next frame.
+        /// </summary>
         public void Enqueue(UdonSharpBehaviour target, string eventName, Promise source)
         {
             if (_count >= _targets.Length) Grow();
@@ -44,7 +55,16 @@ namespace Cesario
             ScheduleFlush();
         }
 
-        public void EnqueueChain(UdonSharpBehaviour target, string onFulfilledEvent, string onRejectedEvent, Promise settled, Promise next)
+        /// <summary>
+        /// Enqueues a Chain handler pair. After the handler runs, the scheduler reads
+        /// <c>ChainResult</c> / <c>ChainResultAdoptee</c> and settles <paramref name="next"/>.
+        /// </summary>
+        public void EnqueueChain(
+            UdonSharpBehaviour target,
+            string onFulfilledEvent,
+            string onRejectedEvent,
+            Promise settled,
+            Promise next)
         {
             if (_chainQueueCount >= _chainQueueTargets.Length) GrowChainQueue();
 
@@ -65,8 +85,28 @@ namespace Cesario
             SendCustomEventDelayedFrames(nameof(FlushQueue), 0);
         }
 
+        /// <summary>
+        /// Flushes both the normal and chain queues. Invoked one frame after the first
+        /// enqueue of a batch.
+        /// </summary>
         public void FlushQueue()
         {
+            _flushScheduled = false;
+
+            // 1. Normal Then / Catch
+            int normalCount = _count;
+            _count = 0;
+
+            for (int i = 0; i < normalCount; i++)
+            {
+                var target = _targets[i];
+                if (target == null) continue;
+
+                target.SetProgramVariable("IncomingPromise", _sources[i]);
+                target.SendCustomEvent(_events[i]);
+            }
+
+            // 2. Chain handlers
             int chainCountThisFlush = _chainQueueCount;
             _chainQueueCount = 0;
 

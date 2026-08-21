@@ -2,28 +2,27 @@
 // Licensed under MIT License
 using UdonSharp;
 using UnityEngine;
-using VRC.SDKBase;
-using VRC.Udon;
-
 
 namespace Cesario
 {
     /// <summary>
-    /// A `Promise` is an object that represents an eventual completion of failure of an asynchronous operation
-    /// It is similar to a Future in Dart/Java/Kotlin/etc, as they represent a value that is yet to be resolved.
+    /// A <c>Promise</c> is an object that represents the eventual completion or failure
+    /// of an asynchronous operation. It is similar to a Future in Dart/Java/Kotlin/etc.
     ///
-    /// Promises are a state machine with three states - pending, fulfilled and rejected. The eventual state of
-    /// a promise can be fulfilled or rejected, the following handlers are queued up from a .then method.
+    /// Promises are a state machine with three states — pending, fulfilled and rejected.
+    /// The eventual state of a promise can be fulfilled or rejected; handlers are queued
+    /// via <see cref="Then"/>, <see cref="Catch"/> and <see cref="Chain"/>.
     ///
-    /// Callback dispatch is never synchronous - Then/Catch/Chain registration and Resolve/Reject
-    /// settlement both hand off to a `PromiseScheduler`, which defers actual invocation by
-    /// a frame. See <see cref="PromiseScheduler"/> for why.
+    /// Callback dispatch is never synchronous. Settlement hands work off to a
+    /// <see cref="PromiseScheduler"/>, which defers actual invocation by a frame.
+    /// See <see cref="PromiseScheduler"/> for why.
     ///
-    /// U# does not support custom interfaces, so all callback dispatch here goes through
-    /// SendCustomEvent + SetProgramVariable/GetProgramVariable string-name conventions
-    /// rather than typed method calls. Every callback target must expose a public
-    /// `Promise IncomingPromise` field; Chain targets additionally need a public
-    /// `object ChainResult` field.
+    /// U# does not support custom interfaces, so all callback dispatch goes through
+    /// <c>SendCustomEvent</c> + <c>SetProgramVariable</c>/<c>GetProgramVariable</c>
+    /// string-name conventions rather than typed method calls. Every callback target
+    /// must expose a public <c>Promise IncomingPromise</c> field; Chain targets
+    /// additionally need a public <c>object ChainResult</c> (and optionally
+    /// <c>Promise ChainResultAdoptee</c>) field.
     ///
     /// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
     /// https://promisesaplus.com/
@@ -35,17 +34,19 @@ namespace Cesario
         [System.NonSerialized] public PromiseScheduler Scheduler;
         [System.NonSerialized] public PromiseFactory Factory;
 
-        /// <summary>Read-back slot for this Promise's own Then/Catch subscriptions
+        /// <summary>
+        /// Read-back slot for this Promise's own Then/Catch subscriptions
         /// (used internally for thenable adoption). Same contract every callback
-        /// target follows.</summary>
+        /// target follows.
+        /// </summary>
         [System.NonSerialized] public Promise IncomingPromise;
 
-        private UdonSharpBehaviour[] _fulfillTargets = new UdonSharpBehaviour[4];
-        private string[] _fulfillEvents = new string[4];
+        private UdonSharpBehaviour[] _fulfillTargets = new UdonSharpBehaviour[8];
+        private string[] _fulfillEvents = new string[8];
         private int _fulfillCount = 0;
 
-        private UdonSharpBehaviour[] _rejectTargets = new UdonSharpBehaviour[4];
-        private string[] _rejectEvents = new string[4];
+        private UdonSharpBehaviour[] _rejectTargets = new UdonSharpBehaviour[8];
+        private string[] _rejectEvents = new string[8];
         private int _rejectCount = 0;
 
         private UdonSharpBehaviour[] _chainTargets = new UdonSharpBehaviour[4];
@@ -56,6 +57,11 @@ namespace Cesario
 
         private bool _adopting = false;
 
+        /// <summary>
+        /// Registers a handler that runs when this promise fulfills.
+        /// Fire-and-forget — does not return a new promise. Use <see cref="Chain"/>
+        /// when you need a continuation.
+        /// </summary>
         public void Then(UdonSharpBehaviour target, string onFulfilledEvent)
         {
             if (_fulfillCount >= _fulfillTargets.Length) GrowFulfill();
@@ -67,6 +73,10 @@ namespace Cesario
                 Scheduler.Enqueue(target, onFulfilledEvent, this);
         }
 
+        /// <summary>
+        /// Registers a handler that runs when this promise rejects.
+        /// Fire-and-forget — does not return a new promise.
+        /// </summary>
         public void Catch(UdonSharpBehaviour target, string onRejectedEvent)
         {
             if (_rejectCount >= _rejectTargets.Length) GrowReject();
@@ -81,10 +91,10 @@ namespace Cesario
         /// <summary>
         /// Registers a chained handler pair and returns a new Promise settled by
         /// whichever event fires. The firing handler must write its result into
-        /// `target.ChainResult` before its event method returns - the scheduler reads
-        /// it back afterward and resolves the returned promise with it. Returning a
-        /// Promise via ChainResult causes the next promise to adopt it instead of
-        /// settling immediately.
+        /// <c>target.ChainResult</c> before its event method returns — the scheduler
+        /// reads it back afterward and resolves the returned promise with it.
+        /// Returning a Promise via <c>ChainResultAdoptee</c> causes the next promise
+        /// to adopt it instead of settling immediately.
         /// </summary>
         public Promise Chain(UdonSharpBehaviour target, string onFulfilledEvent, string onRejectedEvent)
         {
@@ -112,7 +122,7 @@ namespace Cesario
 
         /// <summary>
         /// Settles this promise as fulfilled with the given value. A no-op if the
-        /// promise has already settled (fulfilled or rejected) - per spec, a promise
+        /// promise has already settled (fulfilled or rejected) — per spec, a promise
         /// may only transition out of pending once.
         /// </summary>
         public void Resolve(object value)
@@ -129,9 +139,9 @@ namespace Cesario
         /// <summary>
         /// Settles this promise by waiting on another Promise instead of a plain
         /// value. The explicit alternative to detecting "is value a Promise" inside
-        /// Resolve() - U#'s compiler crashes on `value as Promise` type-checks, so
-        /// callers that know they have a Promise-typed result call this directly
-        /// instead of Resolve().
+        /// <see cref="Resolve"/> — U#'s compiler crashes on <c>value as Promise</c>
+        /// type-checks, so callers that know they have a Promise-typed result call
+        /// this directly instead of <see cref="Resolve"/>.
         /// </summary>
         public void Adopt(Promise inner)
         {
@@ -148,6 +158,9 @@ namespace Cesario
             inner.Catch(this, nameof(OnAdopteeRejected));
         }
 
+        /// <summary>
+        /// Settles this promise as rejected with the given reason. A no-op if already settled.
+        /// </summary>
         public void Reject(object reason)
         {
             if (State != PromiseState.Pending || _adopting) return;
@@ -156,18 +169,94 @@ namespace Cesario
             Value = reason;
 
             if (_fulfillCount == 0 && _rejectCount == 0 && _chainCount == 0)
-            {
                 Debug.LogWarning($"[Promise] Unhandled rejection on '{name}': {reason}");
-            }
 
             if (!HasScheduler()) return;
             DispatchAll();
         }
 
+        /// <summary>
+        /// Returns true if the promise is either fulfilled or rejected.
+        /// </summary>
         public bool IsSettled()
         {
             return State != PromiseState.Pending;
         }
+
+        /// <summary>
+        /// Returns true if the promise is still pending.
+        /// </summary>
+        public bool IsPending()
+        {
+            return State == PromiseState.Pending;
+        }
+
+        /// <summary>
+        /// Returns true if the promise has fulfilled.
+        /// </summary>
+        public bool IsFulfilled()
+        {
+            return State == PromiseState.Fulfilled;
+        }
+
+        /// <summary>
+        /// Returns true if the promise has rejected.
+        /// </summary>
+        public bool IsRejected()
+        {
+            return State == PromiseState.Rejected;
+        }
+        
+        #region Pooling
+
+        /// <summary>
+        /// Resets the promise so it can be returned to the pool and reused.
+        /// Called by <see cref="PromiseFactory"/> before handing it out again.
+        /// </summary>
+        public void ResetState()
+        {
+            State = PromiseState.Pending;
+            Value = null;
+            _fulfillCount = 0;
+            _rejectCount = 0;
+            _chainCount = 0;
+            _adopting = false;
+            IncomingPromise = null;
+
+            // Clear references so we don't keep dead behaviours alive
+            for (int i = 0; i < _fulfillTargets.Length; i++) _fulfillTargets[i] = null;
+            for (int i = 0; i < _rejectTargets.Length; i++) _rejectTargets[i] = null;
+            for (int i = 0; i < _chainTargets.Length; i++)
+            {
+                _chainTargets[i] = null;
+                _chainNext[i] = null;
+            }
+        }
+        
+        #endregion
+        
+        #region Internal adoption handlers
+
+        /// <summary>
+        /// Internal adoption handlers — this Promise is itself a Then/Catch target
+        /// of the inner Promise it's waiting on, so it follows the same
+        /// <c>IncomingPromise</c> read-back convention as everyone else.
+        /// </summary>
+        public void OnAdopteeFulfilled()
+        {
+            _adopting = false;
+            Resolve(IncomingPromise.Value);
+        }
+
+        public void OnAdopteeRejected()
+        {
+            _adopting = false;
+            Reject(IncomingPromise.Value);
+        }
+        
+        #endregion
+
+        #region Internals
 
         private void DispatchAll()
         {
@@ -184,21 +273,6 @@ namespace Cesario
 
             for (int i = 0; i < _chainCount; i++)
                 Scheduler.EnqueueChain(_chainTargets[i], _chainFulfillEvents[i], _chainRejectEvents[i], this, _chainNext[i]);
-        }
-
-        // Internal adoption handlers - this Promise is itself a Then/Catch target
-        // of the inner Promise it's waiting on, so it follows the same IncomingPromise
-        // read-back convention as everyone else.
-        public void OnAdopteeFulfilled()
-        {
-            _adopting = false;
-            Resolve(IncomingPromise.Value);
-        }
-
-        public void OnAdopteeRejected()
-        {
-            _adopting = false;
-            Reject(IncomingPromise.Value);
         }
 
         private bool HasScheduler()
@@ -243,5 +317,7 @@ namespace Cesario
             _chainRejectEvents = newReject;
             _chainNext = newNext;
         }
+        
+        #endregion
     }
 }
